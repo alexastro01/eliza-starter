@@ -25,7 +25,6 @@ import {
 import { bootstrapPlugin } from "@ai16z/plugin-bootstrap";
 import { solanaPlugin } from "@ai16z/plugin-solana";
 import { nodePlugin } from "@ai16z/plugin-node";
-import Database from "better-sqlite3";
 import fs from "fs";
 import readline from "readline";
 import yargs from "yargs";
@@ -33,6 +32,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 import { character } from "./character.ts";
 import type { DirectClient } from "@ai16z/client-direct";
+import { Database as BunDatabase } from 'bun:sqlite';
 
 const __filename = fileURLToPath(import.meta.url); // get the resolved path to the file
 const __dirname = path.dirname(__filename); // get the name of the directory
@@ -146,19 +146,48 @@ export function getTokenForProvider(
   }
 }
 
-function initializeDatabase(dataDir: string) {
-  if (process.env.POSTGRES_URL) {
-    const db = new PostgresDatabaseAdapter({
-      connectionString: process.env.POSTGRES_URL,
-    });
-    return db;
-  } else {
-    const filePath =
-      process.env.SQLITE_FILE ?? path.resolve(dataDir, "db.sqlite");
-    // ":memory:";
-    const db = new SqliteDatabaseAdapter(new Database(filePath));
-    return db;
+// Create a wrapper class that implements the better-sqlite3 interface
+class BunDatabaseWrapper {
+  private db: BunDatabase;
+
+  constructor(filename: string) {
+    this.db = new BunDatabase(filename);
   }
+
+  prepare(sql: string) {
+    return this.db.prepare(sql);
+  }
+
+  // Updated transaction method with correct typing
+  transaction<T>(fn: (...args: any[]) => T) {
+    const transactionFn = this.db.transaction(fn);
+    return (...args: any[]) => transactionFn(...args);
+  }
+
+  exec(sql: string) {
+    return this.db.exec(sql);
+  }
+
+  close() {
+    return this.db.close();
+  }
+
+  pragma(pragma: string, options?: { simple: boolean }) {
+    return this.db.query(pragma);
+  }
+}
+
+function initializeDatabase(dataDir: string) {
+  if (!process.env.POSTGRES_URL) {
+    throw new Error('POSTGRES_URL environment variable is required');
+  }
+  
+const POSTGRES_URL="postgresql://robert:robert@localhost:5432/db-ai"
+
+  const db = new PostgresDatabaseAdapter({
+    connectionString: "postgresql://robert:password@localhost:5432/deliza"
+  });
+  return db;
 }
 
 export async function initializeClients(
@@ -350,9 +379,18 @@ async function handleUserInput(input, agentId) {
       }
     );
 
-    const data = await response.json();
-    data.forEach((message) => console.log(`${"Agent"}: ${message.text}`));
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+
+    const text = await response.text(); // Get raw response text
+    try {
+      const data = JSON.parse(text); // Try to parse as JSON
+      data.forEach((message) => console.log(`${"Agent"}: ${message.text}`));
+    } catch (e) {
+      console.log("Server response:", text); // Log raw response if not JSON
+    }
   } catch (error) {
-    console.error("Error fetching response:", error);
+    console.error("Error:", error.message);
   }
 }
