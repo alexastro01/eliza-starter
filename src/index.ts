@@ -21,6 +21,7 @@ import {
   settings,
   IDatabaseAdapter,
   validateCharacterConfig,
+  knowledge,
 } from "@ai16z/eliza";
 import { bootstrapPlugin } from "@ai16z/plugin-bootstrap";
 import { solanaPlugin } from "@ai16z/plugin-solana";
@@ -33,6 +34,10 @@ import { fileURLToPath } from "url";
 import { character } from "./character.ts";
 import type { DirectClient } from "@ai16z/client-direct";
 import { Database as BunDatabase } from 'bun:sqlite';
+import { getWalletBalance } from './wallet/getBalance';
+import { swapToken } from './transactions/swap';
+import { PublicKey, Connection } from '@solana/web3.js';
+import bs58 from 'bs58';
 
 const __filename = fileURLToPath(import.meta.url); // get the resolved path to the file
 const __dirname = path.dirname(__filename); // get the name of the directory
@@ -364,8 +369,8 @@ async function handleUserInput(input, agentId) {
   }
 
   try {
+    // Send message to agent first
     const serverPort = parseInt(settings.SERVER_PORT || "3000");
-
     const response = await fetch(
       `http://localhost:${serverPort}/${agentId}/message`,
       {
@@ -383,12 +388,76 @@ async function handleUserInput(input, agentId) {
       throw new Error(`HTTP error! status: ${response.status}`);
     }
 
-    const text = await response.text(); // Get raw response text
+    const text = await response.text();
     try {
-      const data = JSON.parse(text); // Try to parse as JSON
-      data.forEach((message) => console.log(`${"Agent"}: ${message.text}`));
+      const data = JSON.parse(text);
+      
+      // Check each message for swap commands
+      for (const message of data) {
+        console.log(`${agentId}: ${message.text}`);
+        if (typeof message.text === 'string' && message.text.toLowerCase().includes('swap')) {
+          console.log("SWAP COMMAND DETECTED");
+          // Parse swap command: "swap 0.01 SOL to USDC"
+          const parts = message.text.toLowerCase().split(' ');
+          const amountIndex = parts.findIndex(p => !isNaN(parseFloat(p)));
+          
+          if (amountIndex !== -1) {
+            const amount = parseFloat(parts[amountIndex]);
+            const fromToken = parts[amountIndex + 1];
+            const toToken = parts[parts.length - 1];
+
+            // Token address mapping
+            const tokenAddresses = {
+              "sol": "So11111111111111111111111111111111111111112",
+              "usdc": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+              "luce": "CBdCxKo9QavR9hfShgpEBG3zekorAeD7W1jfq2o3pump",
+              "$1": "GHichsGq8aPnqJyz6Jp1ASTK4PNLpB5KrD6XrfDjpump",
+              "wif": "EKpQGSJtjMFqKZ9KQanSqYXRcF8fBopzLHYxdM65zcjm"
+            };
+
+            const fromTokenAddress = tokenAddresses[fromToken];
+            const toTokenAddress = tokenAddresses[toToken];
+
+            if (fromTokenAddress && toTokenAddress) {
+              console.log(`\n💱 Processing Swap Request:`);
+              console.log(`🪙 Token detected: ${fromToken.toUpperCase()}`);
+              console.log(`📤 From: ${amount} ${fromToken.toUpperCase()}`);
+              console.log(`📥 To: ${toToken.toUpperCase()}`);
+
+              try {
+                const HELIUS_RPC = `https://mainnet.helius-rpc.com/?api-key=${process.env.HELIUS_API_KEY}`;
+                const connection = new Connection(HELIUS_RPC, {
+                  commitment: 'confirmed',
+                  confirmTransactionInitialTimeout: 60000,
+                });
+                
+                const walletPublicKey = new PublicKey(process.env.WALLET_PUBLIC_KEY);
+                const privateKeyBytes = bs58.decode(process.env.WALLET_PRIVATE_KEY);
+
+                console.log("\n🚀 Executing swap transaction...");
+                const txid = await swapToken(
+                  connection,
+                  walletPublicKey,
+                  privateKeyBytes,
+                  fromTokenAddress,
+                  toTokenAddress,
+                  amount,
+                  100  // 1% slippage
+                );
+
+                console.log("\n✅ Swap completed successfully!");
+                console.log(`🔗 Transaction ID: ${txid}`);
+                console.log(`View on Solscan: https://solscan.io/tx/${txid}`);
+              } catch (error) {
+                console.log("\n❌ Swap Error:", error.message);
+              }
+            }
+          }
+        }
+        console.log(`${agentId}: ${message.text}`);
+      }
     } catch (e) {
-      console.log("Server response:", text); // Log raw response if not JSON
+      console.log("Server response:", text);
     }
   } catch (error) {
     console.error("Error:", error.message);
