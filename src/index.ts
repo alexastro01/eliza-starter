@@ -39,6 +39,7 @@ import { swapToken } from './transactions/swap';
 import { PublicKey, Connection } from '@solana/web3.js';
 import bs58 from 'bs58';
 import { getSingleTokenData } from './tokenData/getSingleTokenData';
+import { getTrendingTokens } from './tokensData/getTrendingTokens';
 
 const __filename = fileURLToPath(import.meta.url); // get the resolved path to the file
 const __dirname = path.dirname(__filename); // get the name of the directory
@@ -369,17 +370,45 @@ async function handleUserInput(input, agentId) {
     return;
   }
 
-  // Check for token info command
-  if (input.toLowerCase().startsWith('info ')) {
-    const tokenAddress = input.split(' ')[1];
-    if (tokenAddress) {
-      try {
-        const tokenData = await getSingleTokenData(tokenAddress);
-        return; // Exit early since we've handled the command
-      } catch (error) {
-        console.error("\n❌ Error fetching token info:", error.message);
-        return;
+  // Simple trending command check
+  if (input.toLowerCase().trim() === 'trending') {
+    try {
+      const trendingInfo = await getTrendingTokens(10, [1399811149], "1D");
+      const message = `Here are the trending tokens:\n${trendingInfo.join('\n\n')}`;
+
+      const serverPort = parseInt(settings.SERVER_PORT || "3000");
+      const response = await fetch(
+        `http://localhost:${serverPort}/${agentId}/message`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            text: message,
+            userId: "user",
+            userName: "User",
+          }),
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
       }
+
+      const text = await response.text();
+      try {
+        const data = JSON.parse(text);
+        // Process each message in the response array
+        for (const message of data) {
+          console.log(`${agentId}: ${typeof message === 'object' ? message.text : message}`);
+        }
+      } catch (e) {
+        // If parsing fails, just output the text directly
+        console.log(`${agentId}: ${text}`);
+      }
+      return;
+    } catch (error) {
+      console.error("\n❌ Error fetching trending tokens:", error.message);
+      return;
     }
   }
 
@@ -409,10 +438,10 @@ async function handleUserInput(input, agentId) {
       
       // Check each message for swap commands
       for (const message of data) {
-        console.log(`${agentId}: ${message.text}`);
+        console.log(`${agentId}: ${typeof message === 'object' ? message.text : message}`);
+        
         if (typeof message.text === 'string' && message.text.toLowerCase().includes('swap')) {
           console.log("SWAP COMMAND DETECTED");
-          // Parse swap command: "swap 0.01 SOL to USDC"
           const parts = message.text.toLowerCase().split(' ');
           const amountIndex = parts.findIndex(p => !isNaN(parseFloat(p)));
           
@@ -422,6 +451,7 @@ async function handleUserInput(input, agentId) {
             const toToken = parts[parts.length - 1];
 
             // Token address mapping
+            //Here we should have a mapping of our tokens in the db , so that the ai can swap x to y ( custom addresses give errors at the moment )
             const tokenAddresses = {
               "sol": "So11111111111111111111111111111111111111112",
               "usdc": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
@@ -430,14 +460,30 @@ async function handleUserInput(input, agentId) {
               "wif": "EKpQGSJtjMFqKZ9KQanSqYXRcF8fBopzLHYxdM65zcjm"
             };
 
-            const fromTokenAddress = tokenAddresses[fromToken];
-            const toTokenAddress = tokenAddresses[toToken];
+            // Get addresses, with modified validation
+            let fromTokenAddress = fromToken;
+            let toTokenAddress = toToken;
 
-            if (fromTokenAddress && toTokenAddress) {
+            // If the token is in our mapping, use that address
+            if (tokenAddresses[fromToken]) {
+              fromTokenAddress = tokenAddresses[fromToken];
+            }
+            if (tokenAddresses[toToken]) {
+              toTokenAddress = tokenAddresses[toToken];
+            }
+
+            // Validate addresses are in correct Base58 format
+            try {
+              // Try to create PublicKey objects to validate the addresses
+              if (fromTokenAddress !== "sol") {
+                new PublicKey(fromTokenAddress);
+              }
+              new PublicKey(toTokenAddress);
+
               console.log(`\n💱 Processing Swap Request:`);
-              console.log(`🪙 Token detected: ${fromToken.toUpperCase()}`);
-              console.log(`📤 From: ${amount} ${fromToken.toUpperCase()}`);
-              console.log(`📥 To: ${toToken.toUpperCase()}`);
+              console.log(`🪙 From Token: ${fromToken.toUpperCase()}`);
+              console.log(`📤 Amount: ${amount}`);
+              console.log(`📥 To Token: ${toToken.toUpperCase()}`);
 
               try {
                 const HELIUS_RPC = `https://mainnet.helius-rpc.com/?api-key=${process.env.HELIUS_API_KEY}`;
@@ -463,16 +509,50 @@ async function handleUserInput(input, agentId) {
                 console.log("\n✅ Swap completed successfully!");
                 console.log(`🔗 Transaction ID: ${txid}`);
                 console.log(`View on Solscan: https://solscan.io/tx/${txid}`);
+
+                // Send confirmation message through the API
+                const confirmationMessage = `You swapped ${amount} ${fromToken.toUpperCase()} to ${toToken.toUpperCase()} successfully!`;
+                const confirmationResponse = await fetch(
+                  `http://localhost:${serverPort}/${agentId}/message`,
+                  {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                      text: confirmationMessage,
+                      userId: "user",
+                      userName: "User",
+                    }),
+                  }
+                );
+
+                if (!confirmationResponse.ok) {
+                  throw new Error(`HTTP error! status: ${confirmationResponse.status}`);
+                }
+
+                console.log(`${agentId}: ${confirmationMessage}`);
               } catch (error) {
                 console.log("\n❌ Swap Error:", error.message);
               }
+            } catch (error) {
+              console.log("\n❌ Invalid token address format:", error.message);
+              const errorResponse = await fetch(
+                `http://localhost:${serverPort}/${agentId}/message`,
+                {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    text: `Error: Invalid token address format. Please use a valid Solana token address or one of the supported tokens: ${Object.keys(tokenAddresses).join(', ')}`,
+                    userId: "user",
+                    userName: "User",
+                  }),
+                }
+              );
             }
           }
         }
-        console.log(`${agentId}: ${message.text}`);
       }
     } catch (e) {
-      console.log("Server response:", text);
+      console.log(`${agentId}: ${text}`);
     }
   } catch (error) {
     console.error("Error:", error.message);

@@ -45,8 +45,8 @@ export async function getSingleTokenData(address: string, networkId: number = 13
 
   
     // console.log(`💰 Price: ${tokenPrice.getTokenPrices}`);
-    console.log("Full data token price")
-    console.log(tokenPrice.getTokenPrices[0].priceUsd)
+    // console.log("Full data token price")
+    // console.log(tokenPrice.getTokenPrices[0].priceUsd)
     return tokenInfo;
   } catch (error) {
     console.log("\n❌ Error Fetching Token Data:");

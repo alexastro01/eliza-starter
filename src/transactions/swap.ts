@@ -73,11 +73,24 @@ export async function swapToken(
     console.log(`🔍 For 0.01 SOL, this should be: 0.01 × (10^9) = 10,000,000 lamports`);
 
     // 1. Get Quote
-    const quoteResponse = await (await fetch(
-        `https://quote-api.jup.ag/v6/quote?inputMint=${inputTokenCA}&outputMint=${outputTokenCA}&amount=${adjustedAmount}&slippageBps=${slippageBps}`
-    )).json();
+    console.log('\n=== Attempting to get quote ===');
+    console.log(`Input Token: ${inputTokenCA}`);
+    console.log(`Output Token: ${outputTokenCA}`);
+    console.log(`Amount: ${adjustedAmount}`);
+
+    const quoteUrl = `https://quote-api.jup.ag/v6/quote?inputMint=${inputTokenCA}&outputMint=${outputTokenCA}&amount=${adjustedAmount}&slippageBps=${slippageBps}`;
+    console.log(`Quote URL: ${quoteUrl}`);
+
+    const quoteResponse = await (await fetch(quoteUrl)).json();
+
+    // Add error checking for quote response
+    if (!quoteResponse || quoteResponse.error) {
+        console.error('Quote Error:', quoteResponse.error || 'Invalid quote response');
+        throw new Error('Failed to get quote: ' + (quoteResponse.error || 'Invalid response'));
+    }
 
     console.log('\n=== Quote Response ===');
+    console.log('Raw quote response:', JSON.stringify(quoteResponse, null, 2));
     console.log(`📥 Input: ${quoteResponse.inAmount / (10 ** decimals)} ${inputTokenCA}`);
     const outDecimals = await getTokenDecimals(connection, outputTokenCA);
     console.log(`📤 Output: ${quoteResponse.outAmount / (10 ** outDecimals)} ${outputTokenCA}`);
