@@ -38,6 +38,7 @@ import { getWalletBalance } from './wallet/getBalance';
 import { swapToken } from './transactions/swap';
 import { PublicKey, Connection } from '@solana/web3.js';
 import bs58 from 'bs58';
+import { getSingleTokenData } from './tokenData/getSingleTokenData';
 
 const __filename = fileURLToPath(import.meta.url); // get the resolved path to the file
 const __dirname = path.dirname(__filename); // get the name of the directory
@@ -366,6 +367,20 @@ async function handleUserInput(input, agentId) {
     rl.close();
     process.exit(0);
     return;
+  }
+
+  // Check for token info command
+  if (input.toLowerCase().startsWith('info ')) {
+    const tokenAddress = input.split(' ')[1];
+    if (tokenAddress) {
+      try {
+        const tokenData = await getSingleTokenData(tokenAddress);
+        return; // Exit early since we've handled the command
+      } catch (error) {
+        console.error("\n❌ Error fetching token info:", error.message);
+        return;
+      }
+    }
   }
 
   try {
