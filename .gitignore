@@ -1,6 +1,9 @@
-*.ts
+
 !index.ts
 !character.ts
+!tokenData/*
+!transactions/*
+!wallet/*
 .env
 node_modules
 
