@@ -24,6 +24,7 @@
     "@ai16z/plugin-solana": "latest",
     "@ai16z/plugin-starknet": "latest",
     "@codex-data/sdk": "^1.0.0-rc3",
+    "@the-convocation/twitter-scraper": "^0.14.1",
     "better-sqlite3": "^11.5.0",
     "readline": "^1.3.0",
     "ws": "^8.18.0",

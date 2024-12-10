@@ -36,11 +36,14 @@ import type { DirectClient } from "@ai16z/client-direct";
 import { Database as BunDatabase } from 'bun:sqlite';
 import { getWalletBalance } from './wallet/getBalance';
 import { swapToken } from './transactions/swap';
+import { trendingTokensAction } from './actions/trendingTokensAction/trendingTokensAction';
 import { PublicKey, Connection } from '@solana/web3.js';
 import bs58 from 'bs58';
 import { getSingleTokenData } from './tokenData/getSingleTokenData';
 import { getTrendingTokens } from './tokensData/getTrendingTokens';
-
+import { newsAction } from "./actions/newsAction/newsAction.ts";
+import { scrapeTwitterAction } from "./actions/scrapeTwitterPosts/scrapeTwitterPosts.ts";
+import { tokenInfoAction } from './actions/tokenInfoAction/tokenInfoAction';
 const __filename = fileURLToPath(import.meta.url); // get the resolved path to the file
 const __dirname = path.dirname(__filename); // get the name of the directory
 
@@ -259,7 +262,7 @@ export function createAgent(
       character.settings.secrets?.WALLET_PUBLIC_KEY ? solanaPlugin : null,
     ].filter(Boolean),
     providers: [],
-    actions: [],
+    actions: [newsAction, trendingTokensAction, scrapeTwitterAction, tokenInfoAction],
     services: [],
     managers: [],
     cacheManager: cache,
@@ -370,47 +373,10 @@ async function handleUserInput(input, agentId) {
     return;
   }
 
+
+
   // Simple trending command check
-  if (input.toLowerCase().trim() === 'trending') {
-    try {
-      const trendingInfo = await getTrendingTokens(10, [1399811149], "1D");
-      const message = `Here are the trending tokens:\n${trendingInfo.join('\n\n')}`;
 
-      const serverPort = parseInt(settings.SERVER_PORT || "3000");
-      const response = await fetch(
-        `http://localhost:${serverPort}/${agentId}/message`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            text: message,
-            userId: "user",
-            userName: "User",
-          }),
-        }
-      );
-
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-
-      const text = await response.text();
-      try {
-        const data = JSON.parse(text);
-        // Process each message in the response array
-        for (const message of data) {
-          console.log(`${agentId}: ${typeof message === 'object' ? message.text : message}`);
-        }
-      } catch (e) {
-        // If parsing fails, just output the text directly
-        console.log(`${agentId}: ${text}`);
-      }
-      return;
-    } catch (error) {
-      console.error("\n❌ Error fetching trending tokens:", error.message);
-      return;
-    }
-  }
 
   try {
     // Send message to agent first
